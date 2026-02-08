@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/prateekjain/reddit_listener"
+Repository = "https://github.com/prateekjain6342/stokbot"
 
 # Core dependencies - required for research functionality
 dependencies = [

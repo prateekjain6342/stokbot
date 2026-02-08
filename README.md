@@ -314,6 +314,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Documentation**: Check the [docs/](docs/) folder for detailed guides
 - **Email**: For private inquiries, contact prateekjain6342@gmail.com
 
----
-
-Made with ❤️ for the Reddit research community

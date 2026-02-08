@@ -33,6 +33,6 @@ jobs:
       - name: Publish to GitHub Packages
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.PAT_TOKEN }}
         run: |
-          twine upload --repository-url https://upload.github.com/prateekjain/reddit_listener/ dist/*
+          twine upload --repository-url https://upload.github.com/prateekjain6342/stokbot/ dist/*
