@@ -35,5 +35,5 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PAT_TOKEN }}
         run: |
-          twine upload --repository-url https://github.com/prateekjain6342/stokbot.git dist/*
+          twine upload --repository-url https://github.com/prateekjain6342/stokbot dist/*
 
