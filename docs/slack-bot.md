@@ -378,23 +378,6 @@ python -m reddit_listener
 /connect-reddit
 ```
 
-### Mock Testing
-
-```python
-import pytest
-from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
-
-@pytest.fixture
-def mock_slack_app():
-    app = App(token="xoxb-test")
-    return app
-
-def test_research_command(mock_slack_app):
-    # Test command handler
-    pass
-```
-
 ## Performance Optimization
 
 ### Async Operations

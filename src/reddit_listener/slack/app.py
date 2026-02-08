@@ -13,6 +13,7 @@ from ..core.research import ResearchService
 from ..reddit.client import RedditClient
 from ..storage.sqlite import SQLiteTokenStore
 from . import blocks
+from .oauth_callback import OAuthCallbackServer
 
 
 class SlackBot:
@@ -54,6 +55,9 @@ class SlackBot:
             reddit_client=self.reddit_client,
             llm_analyzer=self.llm_analyzer,
         )
+
+        # Initialize OAuth callback server
+        self.callback_server = OAuthCallbackServer(port=8080)
 
         # OAuth state storage (in-memory for Phase 1)
         self.oauth_states = {}
@@ -125,6 +129,9 @@ class SlackBot:
             state = secrets.token_urlsafe(32)
             self.oauth_states[state] = {"team_id": team_id, "user_id": user_id}
 
+            # Register callback future
+            callback_future = self.callback_server.register_pending_callback(state)
+
             # Generate authorization URL
             auth_url = self.reddit_client.get_auth_url(state)
 
@@ -135,7 +142,8 @@ class SlackBot:
                         "text": {
                             "type": "mrkdwn",
                             "text": "🔗 *Connect your Reddit account*\n"
-                            "Click the button below to authorize Reddit access:",
+                            "Click the button below to authorize Reddit access.\n"
+                            "After authorizing, you'll be redirected back automatically.",
                         },
                     },
                     {
@@ -151,6 +159,32 @@ class SlackBot:
                     },
                 ]
             )
+
+            # Wait for callback (with timeout)
+            try:
+                callback_data = await asyncio.wait_for(callback_future, timeout=300)  # 5 min timeout
+                code = callback_data["code"]
+                
+                # Exchange code for token
+                await self.reddit_client.exchange_code(code, team_id, user_id)
+                
+                # Clean up state
+                self.oauth_states.pop(state, None)
+                self.callback_server.pending_callbacks.pop(state, None)
+                
+                # Send success message
+                await respond("✅ Reddit account connected successfully! You can now use `/research` with your personal Reddit access.")
+                
+            except asyncio.TimeoutError:
+                # Clean up state
+                self.oauth_states.pop(state, None)
+                self.callback_server.pending_callbacks.pop(state, None)
+                await respond("⏱️ Reddit authorization timed out. Please try `/connect-reddit` again.")
+            except Exception as e:
+                # Clean up state
+                self.oauth_states.pop(state, None)
+                self.callback_server.pending_callbacks.pop(state, None)
+                await respond(f"❌ Error connecting Reddit account: {str(e)}")
 
         @self.app.event("app_mention")
         async def handle_app_mention(event, say):
@@ -177,11 +211,16 @@ class SlackBot:
 
     async def start(self) -> None:
         """Start the Slack bot in Socket Mode."""
+        # Start OAuth callback server
+        await self.callback_server.start()
+        
+        # Start Slack Socket Mode handler
         handler = AsyncSocketModeHandler(self.app, self.config.slack_app_token)
         await handler.start_async()
 
     async def close(self) -> None:
         """Close all connections."""
+        await self.callback_server.stop()
         await self.token_store.close()
         await self.reddit_client.close()
         await self.llm_analyzer.close()

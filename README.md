@@ -152,7 +152,6 @@ reddit_listener/
 │       ├── app.py            # Bot event handlers
 │       └── blocks.py         # Block Kit formatters
 ├── docs/                     # Documentation
-├── tests/                    # Test suite
 ├── pyproject.toml           # Project configuration
 └── .env.example             # Environment template
 ```
@@ -166,17 +165,9 @@ pip install -e ".[dev]"
 ```
 
 This includes:
-- `pytest` - Testing framework
-- `pytest-asyncio` - Async test support
 - `black` - Code formatting
 - `ruff` - Fast Python linter
 - `mypy` - Static type checking
-
-### Running Tests
-
-```bash
-pytest
-```
 
 ### Code Quality
 
@@ -196,7 +187,7 @@ mypy src/
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
-4. Run tests and linters
+4. Run linters (`black src/ && ruff check src/ && mypy src/`)
 5. Commit your changes (`git commit -m 'Add amazing feature'`)
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
@@ -293,9 +284,8 @@ Contributions are welcome! Whether it's bug reports, feature requests, or code c
 1. Fork and clone the repository
 2. Install development dependencies: `pip install -e ".[dev]"`
 3. Make your changes
-4. Run tests: `pytest`
-5. Check code quality: `black src/ && ruff check src/ && mypy src/`
-6. Submit a pull request
+4. Check code quality: `black src/ && ruff check src/ && mypy src/`
+5. Submit a pull request
 
 ## 📄 License
 

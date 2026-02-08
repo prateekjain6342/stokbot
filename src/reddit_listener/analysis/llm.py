@@ -47,13 +47,17 @@ class LLMAnalyzer:
         retryable_exceptions=(httpx.HTTPError, httpx.TimeoutException),
     )
     async def _make_request(
-        self, messages: List[Dict[str, str]], temperature: float = 0.7
+        self, 
+        messages: List[Dict[str, str]], 
+        temperature: float = 0.7,
+        response_format: Dict[str, Any] = None
     ) -> str:
         """Make a request to OpenRouter API.
 
         Args:
             messages: List of message objects with role and content
             temperature: Sampling temperature
+            response_format: Optional response format specification for structured output
 
         Returns:
             Response content from the model
@@ -69,6 +73,10 @@ class LLMAnalyzer:
             "messages": messages,
             "temperature": temperature,
         }
+        
+        # Add response_format if provided
+        if response_format:
+            payload["response_format"] = response_format
 
         response = await self.client.post(
             self.base_url,
@@ -137,32 +145,61 @@ Ignore tangential discussions or unrelated topics that may have appeared in sear
 Reddit Discussions:
 {posts_text}
 
-Return your analysis as a JSON array with this EXACT structure:
-[
-  {{
-    "description": "Clear description of the pain point",
-    "solution_summary": "Summary of top-voted community solutions",
-    "upvotes": <total upvotes for related posts>
-  }}
-]
-
-Return ONLY the JSON array, no additional text or markdown formatting."""
+Return your analysis as a JSON array containing up to 10 pain point objects."""
 
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert at analyzing community discussions and identifying key pain points with their solutions. Always return valid JSON without markdown code blocks.",
+                "content": "You are an expert at analyzing community discussions and identifying key pain points with their solutions. Return structured JSON data.",
             },
             {"role": "user", "content": prompt},
         ]
 
-        response = await self._make_request(messages, temperature=0.3)
+        # Define JSON schema for structured output
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "pain_points_analysis",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "pain_points": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Clear description of the pain point"
+                                    },
+                                    "solution_summary": {
+                                        "type": "string",
+                                        "description": "Summary of top-voted community solutions"
+                                    },
+                                    "upvotes": {
+                                        "type": "integer",
+                                        "description": "Total upvotes for related posts"
+                                    }
+                                },
+                                "required": ["description", "solution_summary", "upvotes"],
+                                "additionalProperties": False
+                            },
+                            "maxItems": 10
+                        }
+                    },
+                    "required": ["pain_points"],
+                    "additionalProperties": False
+                }
+            }
+        }
+
+        response = await self._make_request(messages, temperature=0.3, response_format=response_format)
 
         # Parse JSON response
         try:
-            # Clean response from markdown formatting
-            json_str = self._extract_json_from_response(response)
-            pain_points_data = json.loads(json_str)
+            data = json.loads(response)
+            pain_points_data = data.get("pain_points", [])
             pain_points = [
                 PainPoint(
                     description=pp["description"],
@@ -211,32 +248,61 @@ For EACH content idea, provide:
 IMPORTANT: Only generate content ideas that are DIRECTLY related to "{query}".
 Do not include ideas about unrelated topics that happened to appear in the data.
 
-Return your analysis as a JSON array with this EXACT structure:
-[
-  {{
-    "title": "Compelling content title",
-    "description": "Brief description of content coverage",
-    "rationale": "Why this is valuable based on insights"
-  }}
-]
-
-Return ONLY the JSON array, no additional text or markdown formatting."""
+Return your analysis as a JSON object containing up to 10 content ideas."""
 
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert content strategist who creates engaging content ideas based on community insights. Always return valid JSON without markdown code blocks.",
+                "content": "You are an expert content strategist who creates engaging content ideas based on community insights. Return structured JSON data.",
             },
             {"role": "user", "content": prompt},
         ]
 
-        response = await self._make_request(messages, temperature=0.7)
+        # Define JSON schema for structured output
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "content_ideas_generation",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "content_ideas": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {
+                                        "type": "string",
+                                        "description": "Compelling content title"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Brief description of content coverage"
+                                    },
+                                    "rationale": {
+                                        "type": "string",
+                                        "description": "Why this is valuable based on insights"
+                                    }
+                                },
+                                "required": ["title", "description", "rationale"],
+                                "additionalProperties": False
+                            },
+                            "maxItems": 10
+                        }
+                    },
+                    "required": ["content_ideas"],
+                    "additionalProperties": False
+                }
+            }
+        }
+
+        response = await self._make_request(messages, temperature=0.7, response_format=response_format)
 
         # Parse JSON response
         try:
-            # Clean response from markdown formatting
-            json_str = self._extract_json_from_response(response)
-            content_ideas_data = json.loads(json_str)
+            data = json.loads(response)
+            content_ideas_data = data.get("content_ideas", [])
             content_ideas = [
                 ContentIdea(
                     title=ci["title"],
@@ -248,6 +314,8 @@ Return ONLY the JSON array, no additional text or markdown formatting."""
             return content_ideas
         except (json.JSONDecodeError, KeyError) as e:
             print(f"Error parsing content ideas response: {e}")
+            print(f"Response: {response}")
+            return []
             print(f"Response: {response}")
             return []
 

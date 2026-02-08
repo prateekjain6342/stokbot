@@ -63,10 +63,12 @@ class Config:
 
     # OpenRouter
     openrouter_api_key: str
-    openrouter_model: str = "minimax/minimax-m2.1"
 
     # Security
     encryption_key: str
+
+    # Optional fields with defaults
+    openrouter_model: str = "minimax/minimax-m2.1"
 
     # Database
     database_path: str = "./data/tokens.db"

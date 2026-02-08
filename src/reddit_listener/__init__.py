@@ -7,7 +7,7 @@ Public API:
     - LLMAnalyzer: LLM-powered content analysis
     - TokenStore: Abstract storage interface
     - SQLiteTokenStore: SQLite token storage implementation
-    - Token: Token data structure
+    - TokenData: Token data structure
     - PainPoint, ContentIdea: Analysis result structures
 """
 
@@ -26,7 +26,7 @@ from .analysis import LLMAnalyzer
 
 # Storage interfaces and implementations
 from .storage import TokenStore, SQLiteTokenStore
-from .storage.base import Token
+from .storage.base import TokenData
 
 # Analysis result types
 from .analysis.llm import PainPoint, ContentIdea
@@ -45,7 +45,7 @@ __all__ = [
     # Storage
     "TokenStore",
     "SQLiteTokenStore",
-    "Token",
+    "TokenData",
     # Analysis results
     "PainPoint",
     "ContentIdea",
