@@ -21,9 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-[project.urls]
-Repository = "https://github.com/prateekjain6342/stokbot"
-
 # Core dependencies - required for research functionality
 dependencies = [
     "asyncpraw>=7.7.1",
@@ -32,6 +29,9 @@ dependencies = [
     "aiosqlite>=0.17.0,<0.18.0",
     "cryptography>=42.0.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/prateekjain6342/stokbot"
 
 [project.optional-dependencies]
 # Slack bot functionality - optional for library consumers
