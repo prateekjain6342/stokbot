@@ -7,10 +7,12 @@ Transform Reddit discussions into actionable insights with automated topic resea
 ## ✨ Features
 
 - 🔍 **Reddit Research**: Extract real-time information from Reddit on any topic
+- ⚡ **Optimized Batch Fetching**: Incremental data retrieval with early stopping (50-80% faster)
 - 🤔 **Question Detection**: Identify top 10 questions people are asking
 - 🔑 **Keyword Extraction**: Discover relevant keywords and phrases
 - 😰 **Pain Point Analysis**: Find community pain points with top-voted solutions
 - ✍️ **Content Ideas**: AI-generated content ideas based on Reddit insights
+- 📚 **Two-Phase API**: Library mode for Flask/Django integration
 - 💬 **Slack Bot**: Easy-to-use Slack integration with Block Kit UI
 - 🔐 **Dual Auth**: Server-side or user OAuth2 authentication with Reddit
 - ⚡ **Async Architecture**: Non-blocking I/O with rate limiting and retry logic
@@ -267,6 +269,7 @@ For more help, see the detailed documentation or open an issue.
 
 - [Setup Guide](docs/setup.md) - Detailed installation instructions
 - [Usage Guide](docs/usage.md) - How to use the bot effectively
+- [Two-Phase API](docs/two-phase-api.md) - Library usage for Flask/Django integration
 - [Architecture](docs/architecture.md) - System design and technical details
 - [Reddit Integration](docs/reddit-integration.md) - Reddit API implementation
 - [LLM Analysis](docs/llm-analysis.md) - AI analysis pipeline

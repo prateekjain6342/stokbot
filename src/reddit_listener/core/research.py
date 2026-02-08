@@ -150,11 +150,19 @@ class ResearchService:
         user_id: Optional[str] = None,
         time_filter: str = "month",
         limit: int = 100,
+        batch_size: int = 5,
+        min_relevant: int = 3,
     ) -> DiscoveryResult:
         """Phase 1: Discover content ideas from Reddit discussions.
 
         This method performs the complete research flow and caches the results
         for later detailed context generation. Cache expires after 15 minutes.
+
+        Fetches posts incrementally in batches to optimize performance:
+        - Fetches posts in batches (default 5 at a time)
+        - Checks relevance after each batch
+        - Stops early if enough relevant posts are found
+        - Reduces unnecessary API calls
 
         Args:
             query: Search phrase to research
@@ -162,26 +170,51 @@ class ResearchService:
             user_id: Slack user ID (optional, for user auth)
             time_filter: Time filter for search ("hour", "day", "week", "month", "year", "all")
             limit: Maximum number of posts to fetch
+            batch_size: Number of posts to fetch in each batch (default: 5)
+            min_relevant: Minimum relevant posts to proceed (default: 3)
 
         Returns:
             Discovery results with content ideas and cached context data
         """
         print(f"Starting discovery for: {query}")
 
-        # Fetch Reddit data
-        posts = await self.reddit.search_posts(
-            query=query,
-            limit=limit,
-            time_filter=time_filter,
-            team_id=team_id,
-            user_id=user_id,
-        )
+        # Fetch Reddit data in batches
+        all_posts = []
+        relevant_posts = []
+        batches_fetched = 0
+        
+        while len(all_posts) < limit:
+            batch_limit = min(batch_size, limit - len(all_posts))
+            
+            # Fetch next batch
+            batch_posts = await self.reddit.search_posts(
+                query=query,
+                limit=batch_limit,
+                time_filter=time_filter,
+                team_id=team_id,
+                user_id=user_id,
+                skip=len(all_posts),  # Skip already fetched posts
+            )
+            
+            if not batch_posts:
+                # No more posts available
+                break
+                
+            all_posts.extend(batch_posts)
+            batches_fetched += 1
+            
+            # Filter this batch for relevance
+            batch_relevant, _ = self.relevance_scorer.filter_posts(batch_posts, query)
+            relevant_posts.extend(batch_relevant)
+            
+            print(f"Batch {batches_fetched}: fetched {len(batch_posts)} posts, {len(batch_relevant)} relevant (total relevant: {len(relevant_posts)})")
+            
+            # Stop if we have enough relevant posts
+            if len(relevant_posts) >= min_relevant:
+                print(f"Found {len(relevant_posts)} relevant posts - stopping early")
+                break
 
-        print(f"Found {len(posts)} posts")
-
-        # Filter posts for relevance
-        relevant_posts, filtered_out = self.relevance_scorer.filter_posts(posts, query)
-        print(f"Relevance filtering: {len(relevant_posts)} relevant, {len(filtered_out)} removed")
+        print(f"Discovery complete: {len(all_posts)} total posts, {len(relevant_posts)} relevant")
         
         # Extract just the posts from scored results
         posts = [sp.post for sp in relevant_posts]

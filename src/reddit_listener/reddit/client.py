@@ -210,6 +210,7 @@ class RedditClient:
         team_id: Optional[str] = None,
         user_id: Optional[str] = None,
         subreddits: Optional[List[str]] = None,
+        skip: int = 0,
     ) -> List[Submission]:
         """Search Reddit posts.
 
@@ -221,6 +222,7 @@ class RedditClient:
             user_id: Slack user ID (for user auth)
             subreddits: Optional list of specific subreddits to search (e.g., ["python", "learnprogramming"])
                        If None, searches all subreddits
+            skip: Number of posts to skip (for pagination)
 
         Returns:
             List of Reddit submissions
@@ -244,10 +246,16 @@ class RedditClient:
             
             subreddit = await reddit.subreddit(subreddit_name)
             posts = []
+            count = 0
 
             async for submission in subreddit.search(
-                query, time_filter=time_filter, limit=limit
+                query, time_filter=time_filter, limit=limit + skip
             ):
+                # Skip posts if pagination is requested
+                if count < skip:
+                    count += 1
+                    continue
+                    
                 posts.append(submission)
 
             return posts

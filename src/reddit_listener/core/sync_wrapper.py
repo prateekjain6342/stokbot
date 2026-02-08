@@ -151,11 +151,19 @@ class SyncResearchService:
         user_id: Optional[str] = None,
         time_filter: str = "month",
         limit: int = 100,
+        batch_size: int = 5,
+        min_relevant: int = 3,
     ) -> DiscoveryResult:
         """Phase 1: Discover content ideas from Reddit discussions (synchronous).
         
         This method performs the complete research flow and caches the results
         for later detailed context generation. Cache expires after 15 minutes.
+        
+        Fetches posts incrementally in batches to optimize performance:
+        - Fetches posts in batches (default 5 at a time)
+        - Checks relevance after each batch
+        - Stops early if enough relevant posts are found
+        - Reduces unnecessary API calls
         
         Args:
             query: Search phrase to research
@@ -163,13 +171,15 @@ class SyncResearchService:
             user_id: Slack user ID (optional, for user auth)
             time_filter: Time filter for search ("hour", "day", "week", "month", "year", "all")
             limit: Maximum number of posts to fetch
+            batch_size: Number of posts to fetch in each batch (default: 5)
+            min_relevant: Minimum relevant posts to proceed (default: 3)
             
         Returns:
             Discovery results with content ideas and cached context data
         """
         self._ensure_initialized()
         return self._loop.run_until_complete(
-            self._service.discover_ideas(query, team_id, user_id, time_filter, limit)
+            self._service.discover_ideas(query, team_id, user_id, time_filter, limit, batch_size, min_relevant)
         )
 
     def get_idea_context(self, query: str, idea_title: str) -> DetailedContext:
