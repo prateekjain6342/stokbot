@@ -21,7 +21,7 @@ class SlackBot:
 
     def __init__(self):
         """Initialize Slack bot."""
-        self.config = get_config()
+        self.config = get_config(require_slack=True)
 
         # Initialize Slack app
         self.app = AsyncApp(

@@ -50,22 +50,22 @@ class StorageConfig:
 class Config:
     """Application configuration from environment variables."""
 
-    # Slack
-    slack_app_token: str
-    slack_bot_token: str
-    slack_signing_secret: str
+    # Slack (optional - only needed for Slack bot integration)
+    slack_app_token: Optional[str] = None
+    slack_bot_token: Optional[str] = None
+    slack_signing_secret: Optional[str] = None
 
-    # Reddit
-    reddit_client_id: str
-    reddit_client_secret: str
-    reddit_user_agent: str
-    reddit_redirect_uri: str
+    # Reddit (required)
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_user_agent: str = ""
+    reddit_redirect_uri: str = ""
 
-    # OpenRouter
-    openrouter_api_key: str
+    # OpenRouter (required)
+    openrouter_api_key: str = ""
 
-    # Security
-    encryption_key: str
+    # Security (required)
+    encryption_key: str = ""
 
     # Optional fields with defaults
     openrouter_model: str = "minimax/minimax-m2.1"
@@ -74,15 +74,17 @@ class Config:
     database_path: str = "./data/tokens.db"
 
     @classmethod
-    def from_env(cls) -> "Config":
-        """Load configuration from environment variables with validation."""
+    def from_env(cls, require_slack: bool = False) -> "Config":
+        """Load configuration from environment variables with validation.
+        
+        Args:
+            require_slack: If True, Slack credentials are required. If False, they're optional.
+                          Set to False when using the package as a library without Slack integration.
+        """
         missing = []
 
-        # Required variables
+        # Always required variables
         required_vars = {
-            "SLACK_APP_TOKEN": "slack_app_token",
-            "SLACK_BOT_TOKEN": "slack_bot_token",
-            "SLACK_SIGNING_SECRET": "slack_signing_secret",
             "REDDIT_CLIENT_ID": "reddit_client_id",
             "REDDIT_CLIENT_SECRET": "reddit_client_secret",
             "REDDIT_USER_AGENT": "reddit_user_agent",
@@ -90,6 +92,14 @@ class Config:
             "OPENROUTER_API_KEY": "openrouter_api_key",
             "ENCRYPTION_KEY": "encryption_key",
         }
+        
+        # Slack variables (conditionally required)
+        if require_slack:
+            required_vars.update({
+                "SLACK_APP_TOKEN": "slack_app_token",
+                "SLACK_BOT_TOKEN": "slack_bot_token",
+                "SLACK_SIGNING_SECRET": "slack_signing_secret",
+            })
 
         config_values = {}
         for env_var, field_name in required_vars.items():
@@ -98,6 +108,12 @@ class Config:
                 missing.append(env_var)
             else:
                 config_values[field_name] = value
+        
+        # Load optional Slack vars if not requiring them
+        if not require_slack:
+            config_values["slack_app_token"] = os.getenv("SLACK_APP_TOKEN")
+            config_values["slack_bot_token"] = os.getenv("SLACK_BOT_TOKEN")
+            config_values["slack_signing_secret"] = os.getenv("SLACK_SIGNING_SECRET")
 
         if missing:
             raise ValueError(
@@ -129,9 +145,13 @@ class Config:
 _config: Optional[Config] = None
 
 
-def get_config() -> Config:
-    """Get the global configuration instance."""
+def get_config(require_slack: bool = False) -> Config:
+    """Get the global configuration instance.
+    
+    Args:
+        require_slack: If True, Slack credentials are required. If False, they're optional.
+    """
     global _config
     if _config is None:
-        _config = Config.from_env()
+        _config = Config.from_env(require_slack=require_slack)
     return _config

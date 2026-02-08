@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
@@ -24,6 +25,26 @@ class ResearchResult:
     content_ideas: List[ContentIdea]
 
 
+@dataclass
+class DiscoveryResult:
+    """Discovery phase results with content ideas and cached data."""
+
+    query: str
+    content_ideas: List[ContentIdea]
+    pain_points: List[PainPoint]
+    questions: List[str]
+    keywords: List[str]
+    _posts_data: List[Dict[str, Any]]  # Internal cache for context generation
+
+
+@dataclass
+class DiscoveryCacheEntry:
+    """Cache entry for discovery results."""
+
+    result: DiscoveryResult
+    timestamp: float
+
+
 class ResearchService:
     """Orchestrates Reddit research and LLM analysis."""
 
@@ -37,12 +58,16 @@ class ResearchService:
         self.reddit = reddit_client
         self.llm = llm_analyzer
         self.relevance_scorer = RelevanceScorer(min_threshold=0.3)
+        self._discovery_cache: Dict[str, DiscoveryCacheEntry] = {}
+        self._cache_ttl = 900  # 15 minutes in seconds
 
     async def research(
         self,
         query: str,
         team_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        time_filter: str = "month",
+        limit: int = 100,
     ) -> ResearchResult:
         """Perform complete research on a query.
 
@@ -50,6 +75,8 @@ class ResearchService:
             query: Search phrase to research
             team_id: Slack team ID (optional, for user auth)
             user_id: Slack user ID (optional, for user auth)
+            time_filter: Time filter for search ("hour", "day", "week", "month", "year", "all")
+            limit: Maximum number of posts to fetch
 
         Returns:
             Complete research results
@@ -59,8 +86,8 @@ class ResearchService:
         # Fetch Reddit data
         posts = await self.reddit.search_posts(
             query=query,
-            limit=100,
-            time_filter="month",
+            limit=limit,
+            time_filter=time_filter,
             team_id=team_id,
             user_id=user_id,
         )
@@ -115,6 +142,181 @@ class ResearchService:
             pain_points=pain_points[:10],
             content_ideas=content_ideas[:10],
         )
+
+    async def discover_ideas(
+        self,
+        query: str,
+        team_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        time_filter: str = "month",
+        limit: int = 100,
+    ) -> DiscoveryResult:
+        """Phase 1: Discover content ideas from Reddit discussions.
+
+        This method performs the complete research flow and caches the results
+        for later detailed context generation. Cache expires after 15 minutes.
+
+        Args:
+            query: Search phrase to research
+            team_id: Slack team ID (optional, for user auth)
+            user_id: Slack user ID (optional, for user auth)
+            time_filter: Time filter for search ("hour", "day", "week", "month", "year", "all")
+            limit: Maximum number of posts to fetch
+
+        Returns:
+            Discovery results with content ideas and cached context data
+        """
+        print(f"Starting discovery for: {query}")
+
+        # Fetch Reddit data
+        posts = await self.reddit.search_posts(
+            query=query,
+            limit=limit,
+            time_filter=time_filter,
+            team_id=team_id,
+            user_id=user_id,
+        )
+
+        print(f"Found {len(posts)} posts")
+
+        # Filter posts for relevance
+        relevant_posts, filtered_out = self.relevance_scorer.filter_posts(posts, query)
+        print(f"Relevance filtering: {len(relevant_posts)} relevant, {len(filtered_out)} removed")
+        
+        # Extract just the posts from scored results
+        posts = [sp.post for sp in relevant_posts]
+
+        # Fetch comments for top posts (in parallel)
+        top_posts = sorted(posts, key=lambda p: p.score, reverse=True)[:20]
+        comment_tasks = [self.reddit.get_post_comments(post, limit=20) for post in top_posts]
+        all_comments = await asyncio.gather(*comment_tasks)
+
+        # Map comments to posts
+        posts_with_comments = []
+        for post, comments in zip(top_posts, all_comments):
+            posts_with_comments.append({"post": post, "comments": comments})
+
+        print(f"Fetched comments for {len(posts_with_comments)} top posts")
+
+        # Extract insights (in parallel)
+        questions_task = asyncio.create_task(self._extract_questions(posts))
+        keywords_task = asyncio.create_task(self._extract_keywords(posts))
+
+        # Prepare data for LLM analysis
+        posts_data = self._prepare_posts_data(posts_with_comments)
+
+        # Run LLM analysis (in parallel)
+        pain_points_task = asyncio.create_task(self.llm.analyze_pain_points(query, posts_data))
+
+        # Wait for all tasks
+        questions = await questions_task
+        keywords = await keywords_task
+        pain_points = await pain_points_task
+
+        print(f"Extracted {len(questions)} questions, {len(keywords)} keywords, {len(pain_points)} pain points")
+
+        # Generate content ideas based on all insights
+        content_ideas = await self.llm.generate_content_ideas(query, posts_data, pain_points)
+
+        print(f"Generated {len(content_ideas)} content ideas")
+
+        # Create discovery result with cached posts data
+        result = DiscoveryResult(
+            query=query,
+            content_ideas=content_ideas[:10],
+            pain_points=pain_points[:10],
+            questions=questions[:10],
+            keywords=keywords[:10],
+            _posts_data=posts_data,
+        )
+
+        # Cache the result
+        self._discovery_cache[query] = DiscoveryCacheEntry(
+            result=result,
+            timestamp=time.time(),
+        )
+
+        # Clean expired cache entries
+        self._clean_expired_cache()
+
+        return result
+
+    async def get_idea_context(self, query: str, idea_title: str) -> "DetailedContext":
+        """Phase 2: Get detailed context for a specific content idea.
+
+        Retrieves cached discovery data and generates in-depth analysis for the
+        selected idea. This provides rich context for downstream content generation.
+
+        Args:
+            query: Original search query used in discover_ideas()
+            idea_title: Title of the content idea to get context for
+
+        Returns:
+            Detailed context with comprehensive analysis
+
+        Raises:
+            ValueError: If no cached discovery data found for query or if cache expired
+        """
+        # Import here to avoid circular dependency
+        from ..analysis.llm import DetailedContext
+
+        # Check cache
+        cache_entry = self._discovery_cache.get(query)
+        if not cache_entry:
+            raise ValueError(
+                f"No cached discovery data found for query: '{query}'. "
+                "Please call discover_ideas() first."
+            )
+
+        # Check if cache expired
+        if time.time() - cache_entry.timestamp > self._cache_ttl:
+            del self._discovery_cache[query]
+            raise ValueError(
+                f"Cached discovery data expired for query: '{query}'. "
+                "Please call discover_ideas() again."
+            )
+
+        # Find the matching content idea to get description
+        matching_idea = None
+        for idea in cache_entry.result.content_ideas:
+            if idea.title == idea_title:
+                matching_idea = idea
+                break
+
+        if not matching_idea:
+            # Fuzzy match - find closest title
+            for idea in cache_entry.result.content_ideas:
+                if idea_title.lower() in idea.title.lower() or idea.title.lower() in idea_title.lower():
+                    matching_idea = idea
+                    break
+
+        if not matching_idea:
+            raise ValueError(
+                f"Content idea with title '{idea_title}' not found in discovery results. "
+                f"Available ideas: {[idea.title for idea in cache_entry.result.content_ideas]}"
+            )
+
+        # Generate detailed context
+        print(f"Generating detailed context for idea: {idea_title}")
+        detailed_context = await self.llm.generate_detailed_context(
+            idea_title=matching_idea.title,
+            idea_description=matching_idea.description,
+            posts_data=cache_entry.result._posts_data,
+        )
+
+        return detailed_context
+
+    def _clean_expired_cache(self) -> None:
+        """Remove expired entries from discovery cache."""
+        current_time = time.time()
+        expired_keys = [
+            key
+            for key, entry in self._discovery_cache.items()
+            if current_time - entry.timestamp > self._cache_ttl
+        ]
+        for key in expired_keys:
+            del self._discovery_cache[key]
+            print(f"Removed expired cache entry for query: {key}")
 
     async def _extract_questions(self, posts: List[Submission]) -> List[str]:
         """Extract top questions from posts.

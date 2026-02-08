@@ -27,6 +27,20 @@ class ContentIdea:
     rationale: str
 
 
+@dataclass
+class DetailedContext:
+    """Detailed context for a specific content idea."""
+
+    idea_title: str
+    idea_description: str
+    full_post_and_comment_analysis: str
+    emotional_aspect: str
+    controversial_aspect: Dict[str, Any]  # {"is_controversial": bool, "for_against_split": str}
+    engagement_signals: Dict[str, Any]  # {"popularity": str, "virality_potential": str}
+    knowledge_depth: str  # "beginner-friendly" / "intermediate" / "expert"
+    category: str
+
+
 class LLMAnalyzer:
     """OpenRouter LLM analyzer using Minimax M2.1 model."""
 
@@ -316,8 +330,187 @@ Return your analysis as a JSON object containing up to 10 content ideas."""
             print(f"Error parsing content ideas response: {e}")
             print(f"Response: {response}")
             return []
+
+    async def generate_detailed_context(
+        self,
+        idea_title: str,
+        idea_description: str,
+        posts_data: List[Dict[str, Any]],
+    ) -> DetailedContext:
+        """Generate detailed context for a specific content idea.
+
+        This provides comprehensive, case-study-level analysis of Reddit discussions
+        for downstream content generation. The analysis is exhaustive and captures
+        nuances, debates, emotions, and community dynamics.
+
+        Args:
+            idea_title: Title of the content idea
+            idea_description: Brief description of the idea
+            posts_data: List of post data from Reddit
+
+        Returns:
+            Detailed context with comprehensive analysis
+        """
+        posts_text = self._format_posts_for_analysis(posts_data, max_posts=100)
+
+        prompt = f"""You are analyzing Reddit discussions to provide exhaustive context for this content idea:
+
+**Content Idea:** {idea_title}
+**Description:** {idea_description}
+
+**Your Task:**
+Provide a comprehensive, case-study-level analysis of the Reddit discussions below. This analysis will be the ONLY context available to downstream content generators (LinkedIn posts, Twitter threads, blog articles), so it must be extremely detailed and capture ALL relevant information.
+
+**Reddit Discussions:**
+{posts_text}
+
+**Analysis Requirements:**
+
+1. **Full Post & Comment Analysis** (Most Important):
+   - Transform the Reddit data into a richly detailed narrative
+   - Go far beyond summarization — provide point-by-point contextualized analysis
+   - Capture: motivations, challenges, debates, opposing viewpoints, technical/cultural context
+   - Document: recurring issues, sentiment shifts, community consensus, minority opinions
+   - Include: specific examples, quotes (paraphrased), concrete scenarios
+   - Identify: underlying problems, attempted solutions, what worked/didn't work
+   - Write like a comprehensive case study that could stand alone
+   - Minimum 500 words, maximum 2000 words
+
+2. **Emotional Aspect**: 
+   - Identify the dominant emotional tone (e.g., "frustrated", "excited", "concerned", "hopeful", "angry", "curious")
+
+3. **Controversial Aspect**:
+   - Determine if the topic is controversial
+   - If yes, estimate the split (e.g., "60% supportive, 40% critical")
+
+4. **Engagement Signals**:
+   - Assess popularity level ("high", "medium", "low")
+   - Estimate virality potential ("high", "medium", "low")
+
+5. **Knowledge Depth**:
+   - Classify as "beginner-friendly", "intermediate", or "expert"
+
+6. **Category**:
+   - Primary content category (e.g., "Tutorial", "Opinion", "Analysis", "Case Study", "Guide", "News", "Discussion")
+
+Focus on extracting maximum value and context from the Reddit discussions."""
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert Reddit and social media content analyst who provides exhaustive, case-study-level analysis. You extract maximum context and nuance from discussions to enable high-quality content generation downstream.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
+        # Define JSON schema for structured output
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "detailed_context_analysis",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "idea_title": {
+                            "type": "string",
+                            "description": "The content idea title"
+                        },
+                        "idea_description": {
+                            "type": "string",
+                            "description": "Brief description of the idea"
+                        },
+                        "full_post_and_comment_analysis": {
+                            "type": "string",
+                            "description": "Exhaustive case-study-like narrative analysis (500-2000 words)"
+                        },
+                        "emotional_aspect": {
+                            "type": "string",
+                            "description": "Dominant emotional tone"
+                        },
+                        "controversial_aspect": {
+                            "type": "object",
+                            "properties": {
+                                "is_controversial": {
+                                    "type": "boolean",
+                                    "description": "Whether the topic is controversial"
+                                },
+                                "for_against_split": {
+                                    "type": "string",
+                                    "description": "Percentage split if controversial"
+                                }
+                            },
+                            "required": ["is_controversial", "for_against_split"],
+                            "additionalProperties": False
+                        },
+                        "engagement_signals": {
+                            "type": "object",
+                            "properties": {
+                                "popularity": {
+                                    "type": "string",
+                                    "description": "Popularity level: high, medium, or low"
+                                },
+                                "virality_potential": {
+                                    "type": "string",
+                                    "description": "Virality potential: high, medium, or low"
+                                }
+                            },
+                            "required": ["popularity", "virality_potential"],
+                            "additionalProperties": False
+                        },
+                        "knowledge_depth": {
+                            "type": "string",
+                            "description": "Target audience level: beginner-friendly, intermediate, or expert"
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "Primary content category"
+                        }
+                    },
+                    "required": [
+                        "idea_title",
+                        "idea_description",
+                        "full_post_and_comment_analysis",
+                        "emotional_aspect",
+                        "controversial_aspect",
+                        "engagement_signals",
+                        "knowledge_depth",
+                        "category"
+                    ],
+                    "additionalProperties": False
+                }
+            }
+        }
+
+        response = await self._make_request(messages, temperature=0.5, response_format=response_format)
+
+        # Parse JSON response
+        try:
+            data = json.loads(response)
+            return DetailedContext(
+                idea_title=data["idea_title"],
+                idea_description=data["idea_description"],
+                full_post_and_comment_analysis=data["full_post_and_comment_analysis"],
+                emotional_aspect=data["emotional_aspect"],
+                controversial_aspect=data["controversial_aspect"],
+                engagement_signals=data["engagement_signals"],
+                knowledge_depth=data["knowledge_depth"],
+                category=data["category"],
+            )
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error parsing detailed context response: {e}")
             print(f"Response: {response}")
-            return []
+            # Return a minimal context on error
+            return DetailedContext(
+                idea_title=idea_title,
+                idea_description=idea_description,
+                full_post_and_comment_analysis="Error generating detailed analysis.",
+                emotional_aspect="unknown",
+                controversial_aspect={"is_controversial": False, "for_against_split": "N/A"},
+                engagement_signals={"popularity": "unknown", "virality_potential": "unknown"},
+                knowledge_depth="unknown",
+                category="unknown",
+            )
 
     def _format_posts_for_analysis(
         self, posts_data: List[Dict[str, Any]], max_posts: int = 50

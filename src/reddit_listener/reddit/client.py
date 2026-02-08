@@ -209,6 +209,7 @@ class RedditClient:
         time_filter: str = "month",
         team_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        subreddits: Optional[List[str]] = None,
     ) -> List[Submission]:
         """Search Reddit posts.
 
@@ -218,6 +219,8 @@ class RedditClient:
             time_filter: Time filter (hour, day, week, month, year, all)
             team_id: Slack team ID (for user auth)
             user_id: Slack user ID (for user auth)
+            subreddits: Optional list of specific subreddits to search (e.g., ["python", "learnprogramming"])
+                       If None, searches all subreddits
 
         Returns:
             List of Reddit submissions
@@ -231,7 +234,15 @@ class RedditClient:
             reddit = await self._get_server_reddit()
 
         try:
-            subreddit = await reddit.subreddit("all")
+            # Determine subreddit(s) to search
+            if subreddits:
+                # Join multiple subreddits with + (e.g., "python+learnprogramming")
+                subreddit_name = "+".join(subreddits)
+            else:
+                # Search all subreddits
+                subreddit_name = "all"
+            
+            subreddit = await reddit.subreddit(subreddit_name)
             posts = []
 
             async for submission in subreddit.search(
